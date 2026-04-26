@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+    <title>UNNC AR Explorer</title>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    <style>
+        /* 覆盖层样式 */
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
+            pointer-events: none;
+        }
+        
+        /* 信息面板 */
+        .info-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 20px;
+            transform: translateY(100%);
+            transition: transform 0.5s ease;
+            z-index: 10000;
+            pointer-events: auto;
+            box-sizing: border-box;
+            max-height: 50vh;
+            overflow-y: auto;
+        }
+        
+        .info-panel.show {
+            transform: translateY(0);
+        }
+        
+        .info-panel h2 {
+            margin: 0 0 10px 0;
+            font-size: 1.3em;
+            color: #FFD700;
+        }
+        
+        .info-panel p {
+            margin: 5px 0;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        
+        .info-panel .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 1.5em;
+            cursor: pointer;
+            pointer-events: auto;
+            color: #FFD700;
+        }
+        
+        /* 启动页 */
+        #splash {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        #splash h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            color: #FFD700;
+        }
+        
+        #splash p {
+            font-size: 1em;
+            margin: 10px 0;
+            max-width: 300px;
+            line-height: 1.6;
+        }
+        
+        #splash button {
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border: 2px solid #FFD700;
+            background: transparent;
+            color: #FFD700;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        #splash button:hover {
+            background: #FFD700;
+            color: #1a1a2e;
+        }
+        
+        /* 扫描提示 */
+        #scan-hint {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            z-index: 10000;
+            font-size: 0.85em;
+            display: none;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 发现标记动画 */
+        .found-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100px;
+            height: 100px;
+            border: 3px solid #FFD700;
+            border-radius: 50%;
+            z-index: 10001;
+            animation: foundPulse 0.8s ease-out forwards;
+            pointer-events: none;
+        }
+
+        @keyframes foundPulse {
+            0% { width: 100px; height: 100px; opacity: 1; }
+            100% { width: 200px; height: 200px; opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 启动页 -->
+    <div id="splash">
+        <h1> UNNC AR Explorer</h1>
+        <p>Explore UNNC Campus</p>
+        <p> Arrive at the check-in spot via audio guide,  scan with your phone.</p>
+        <p style="font-size: 0.8em; color: #aaa;">Watch out for animals nearby</p>
+        <button onclick="startAR()">Start your journey </button>
+    </div>
+
+    <!-- 扫描提示 -->
+    <div id="scan-hint">Please aim your camera at the landmark</div>
+
+    <!-- AR场景 -->
+    <a-scene
+        mindar-image="imageTargetSrc: targets.mind; maxTrack: 6; filterMinCF: 0.001; filterBeta: 1000;"
+        color-space="sRGB"
+        renderer="colorManagement: true, physicallyCorrectLights"
+        vr-mode-ui="enabled: false"
+        device-orientation-permission-ui="enabled: false"
+        loading-screen="enabled: false"
+        visible="false"
+        id="ar-scene"
+    >
+        <a-assets>
+            <!-- 使用Web Audio API生成音效，不需要外部文件 -->
+        </a-assets>
+
+        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+        <!-- 钟楼标记 (index 0) -->
+        <a-entity mindar-image-target="targetIndex: 0" id="clock-tower-target">
+            <!-- 半透明背景面板 -->
+            <a-plane 
+                position="0 0 0" 
+                rotation="0 0 0" 
+                width="1.2" 
+                height="0.8" 
+                color="#000033" 
+                opacity="0.7"
+                material="shader: flat"
+            ></a-plane>
+            
+            <!-- 标题 -->
+            <a-text 
+                value="UNNC Clock Tower" 
+                position="0 0.25 0.01" 
+                align="center" 
+                color="#FFD700" 
+                width="1.8"
+                font="mozillavr"
+            ></a-text>
+            
+            <!-- 副标题 -->
+            <a-text 
+                value="Trent Building" 
+                position="0 0.12 0.01" 
+                align="center" 
+                color="#FFFFFF" 
+                width="1.2"
+                font="mozillavr"
+            ></a-text>
+
+            <!-- 信息文字 -->
+            <a-text 
+                value="Est. 2004 | Ningbo, China" 
+                position="0 -0.02 0.01" 
+                align="center" 
+                color="#CCCCCC" 
+                width="1.0"
+                font="mozillavr"
+            ></a-text>
+
+            <!-- 装饰边框 -->
+            <a-plane 
+                position="0 0 -0.001" 
+                width="1.25" 
+                height="0.85" 
+                color="#FFD700" 
+                opacity="0.5"
+                material="shader: flat; wireframe: true"
+            ></a-plane>
+
+            <!-- 动画钟表指针效果 -->
+            <a-ring 
+                position="0 -0.2 0.01" 
+                color="#FFD700" 
+                radius-inner="0.06" 
+                radius-outer="0.08"
+                material="shader: flat"
+            ></a-ring>
+            <a-plane
+                position="0 -0.17 0.02"
+                width="0.005"
+                height="0.05"
+                color="#FFD700"
+                material="shader: flat"
+                animation="property: rotation; to: 0 0 -360; dur: 10000; loop: true; easing: linear"
+            ></a-plane>
+        </a-entity>
+
+        <!-- 猫猫标记 (index 1) -->
+        <a-entity mindar-image-target="targetIndex: 1" id="cat-target">
+            <!-- 背景面板 -->
+            <a-plane 
+                position="0 0.5 0" 
+                rotation="0 0 0" 
+                width="1.2" 
+                height="0.7" 
+                color="#1a0a2e" 
+                opacity="0.75"
+                material="shader: flat"
+            ></a-plane>
+            
+            <!-- 标题 -->
+            <a-text 
+                value="Clock Tower Guardian" 
+                position="0 0.65 0.01" 
+                align="center" 
+                color="#FF69B4" 
+                width="1.6"
+                font="mozillavr"
+            ></a-text>
+
+            <!-- 副标题 -->
+            <a-text 
+                value="zhong lou shou hu shou" 
+                position="0 0.52 0.01" 
+                align="center" 
+                color="#FFFFFF" 
+                width="1.0"
+                font="mozillavr"
+            ></a-text>
+
+            <!-- 猫爪装饰 -->
+            <a-text 
+                value="=^..^=" 
+                position="0 0.38 0.01" 
+                align="center" 
+                color="#FFB6C1" 
+                width="2.0"
+                font="mozillavr"
+                animation="property: scale; from: 1 1 1; to: 1.1 1.1 1.1; dur: 1000; dir: alternate; loop: true"
+            ></a-text>
+
+            <!-- 装饰边框 -->
+            <a-plane 
+                position="0 0.5 -0.001" 
+                width="1.25" 
+                height="0.75" 
+                color="#FF69B4" 
+                opacity="0.4"
+                material="shader: flat; wireframe: true"
+            ></a-plane>
+
+            <!-- 漂浮的心形 -->
+            <a-text
+                value="♥"
+                position="-0.4 0.7 0.02"
+                color="#FF1493"
+                width="1.5"
+                animation="property: position; to: -0.4 0.9 0.02; dur: 2000; dir: alternate; loop: true; easing: easeInOutSine"
+            ></a-text>
+            <a-text
+                value="♥"
+                position="0.4 0.75 0.02"
+                color="#FF69B4"
+                width="1.0"
+                animation="property: position; to: 0.4 0.85 0.02; dur: 1500; dir: alternate; loop: true; easing: easeInOutSine"
+            ></a-text>
+        </a-entity>
+
+
+        <!-- NOTTINGHAM 石碑 (index 2) -->
+        <a-entity mindar-image-target="targetIndex: 2" id="stone-target">
+            <a-plane position="0 0 0" width="1.2" height="0.8" color="#202020" opacity="0.7" material="shader: flat"></a-plane>
+            <a-text value="NOTTINGHAM" position="0 0.25 0.01" align="center" color="#c5c5c5" width="1.8" font="mozillavr"></a-text>
+            <a-text value="UNNC Landmark" position="0 0.12 0.01" align="center" color="#999999" width="1.2" font="mozillavr"></a-text>
+            <a-plane position="0 0 -0.001" width="1.25" height="0.85" color="#777777" opacity="0.4" material="shader: flat; wireframe: true"></a-plane>
+        </a-entity>
+        <!-- 诺米大鹅 (index 3) -->
+        <a-entity mindar-image-target="targetIndex: 3" id="goose-target">
+            <a-plane position="0 0 0" width="1.2" height="0.8" color="#f0f4f8" opacity="0.75" material="shader: flat"></a-plane>
+            <a-text value="UNNC 诺米大鹅" position="0 0.25 0.01" align="center" color="#2c3e50" width="1.8" font="mozillavr"></a-text>
+            <a-text value="Campus Mascot Goose" position="0 0.12 0.01" align="center" color="#555555" width="1.2" font="mozillavr"></a-text>
+            <a-text value="🦢" position="0 -0.15 0.02" align="center" width="2.5" animation="property: scale; from: 1 1 1; to: 1.15 1.15 1.15; dur: 1200; dir: alternate; loop: true"></a-text>
+        </a-entity>
+        <!-- 图书馆 (index 4) -->
+        <a-entity mindar-image-target="targetIndex: 4" id="library-target">
+            <a-plane position="0 0 0" width="1.2" height="0.8" color="#0f1e3d" opacity="0.7" material="shader: flat"></a-plane>
+            <a-text value="UNNC Library" position="0 0.25 0.01" align="center" color="#87cefa" width="1.8" font="mozillavr"></a-text>
+            <a-text value="Knowledge Building" position="0 0.12 0.01" align="center" color="#b0c4de" width="1.2" font="mozillavr"></a-text>
+            <a-plane position="0 0 -0.001" width="1.25" height="0.85" color="#87cefa" opacity="0.4" material="shader: flat; wireframe: true"></a-plane>
+        </a-entity>
+    </a-scene>
+
+    <!-- 信息面板 -->
+    <div id="overlay">
+        <!-- 钟楼信息面板 -->
+        <div class="info-panel" id="clock-panel">
+            <span class="close-btn" onclick="closePanel('clock-panel')">&times;</span>
+            <h2>Trent Building</h2>
+            <p>The Clock Tower is the most iconic landmark of UNNC，was first built in 2004 </p>
+            <p>it adopts classic British architectural style, replicated from its UK counterpart. Standing by the central lake, the grand clock tower strikes every hour.</p>
+            <p>It serves as the visual axis of the campus, and is also a popular landmark for daily visits and graduation photos.</p>           
+        </div>
+
+        <!-- 猫猫信息面板 -->
+        <div class="info-panel" id="cat-panel">
+            <span class="close-btn" onclick="closePanel('cat-panel')">&times;</span>
+            <h2>cute campus cats</h2>
+            <p>Cute stray cats can be seen everywhere on campus.</p>
+            <p>They are gentle and friendly, forming a unique scenery of UNNC. </p>
+            <p>Students show great love and care for these lovely creatures and take good care of them.  </p>
+            <p>The harmonious coexistence between people and cats brings endless warmth and comfort to the whole campus.</p>
+            
+        </div>
+        <!-- 石碑面板 -->
+        <div class="info-panel" id="stone-panel">
+            <span class="close-btn" onclick="closePanel('stone-panel')">&times;</span>
+            <h2>UNNC Landmarks</h2>
+            <p>Each letter features blue-and-white photo tiles of students and staff.</p>
+            <p>It is a signature photo spot for UNNCers.</p>
+        </div>
+        <!-- 大鹅面板 -->
+        <div class="info-panel" id="goose-panel">
+            <span class="close-btn" onclick="closePanel('goose-panel')">&times;</span>
+            <h2>NuoMi</h2>
+            <p>The universally recognized campus mascot of UNNCERs</p>
+            <p>It never attacks humans unprovoked. If you feed it regularly, it will even let you pet it.</p>
+        </div>
+
+        <!-- 图书馆面板 -->
+        <div class="info-panel" id="library-panel">
+            <span class="close-btn" onclick="closePanel('library-panel')">&times;</span>
+            <h2>UNNC Library</h2>
+            <p>Core learning hub with rich books & facilities</p>
+            <p>An ideal spot for quiet study, group discussions and research.</p>
+        </div>
+    </div>
+
+    <script>
+        // ============ 音频生成（Web Audio API） ============
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playBellSound() {
+            // 生成钟声
+            const frequencies = [261.63, 329.63, 392.00, 523.25];
+            
+            frequencies.forEach((freq, index) => {
+                setTimeout(() => {
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                    
+                    gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 2.5);
+                    
+                    oscillator.start(audioCtx.currentTime);
+                    oscillator.stop(audioCtx.currentTime + 2.5);
+                    
+                    // 添加谐波使钟声更真实
+                    const harmonic = audioCtx.createOscillator();
+                    const hGain = audioCtx.createGain();
+                    harmonic.connect(hGain);
+                    hGain.connect(audioCtx.destination);
+                    harmonic.type = 'sine';
+                    harmonic.frequency.setValueAtTime(freq * 2.76, audioCtx.currentTime);
+                    hGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    hGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
+                    harmonic.start(audioCtx.currentTime);
+                    harmonic.stop(audioCtx.currentTime + 1.5);
+                    
+                }, index * 800);
+            });
+        }
+
+        function playCatSound() {
+            // 生成猫叫声 - 模拟"喵"
+            for (let i = 0; i < 3; i++) {
+                setTimeout(() => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    
+                    osc.type = 'sine';
+                    
+                    // 猫叫的频率变化（先升后降）
+                    const startTime = audioCtx.currentTime;
+                    osc.frequency.setValueAtTime(400, startTime);
+                    osc.frequency.linearRampToValueAtTime(700, startTime + 0.15);
+                    osc.frequency.linearRampToValueAtTime(500, startTime + 0.4);
+                    osc.frequency.linearRampToValueAtTime(350, startTime + 0.6);
+                    
+                    gain.gain.setValueAtTime(0, startTime);
+                    gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+                    gain.gain.setValueAtTime(0.3, startTime + 0.3);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.6);
+                    
+                    osc.start(startTime);
+                    osc.stop(startTime + 0.6);
+                    
+                    // 添加沙哑感
+                    const noise = audioCtx.createOscillator();
+                    const nGain = audioCtx.createGain();
+                    noise.connect(nGain);
+                    nGain.connect(audioCtx.destination);
+                    noise.type = 'sawtooth';
+                    noise.frequency.setValueAtTime(600, startTime);
+                    noise.frequency.linearRampToValueAtTime(900, startTime + 0.15);
+                    noise.frequency.linearRampToValueAtTime(600, startTime + 0.5);
+                    nGain.gain.setValueAtTime(0.03, startTime);
+                    nGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.5);
+                    noise.start(startTime);
+                    noise.stop(startTime + 0.5);
+                    
+                }, i * 900);
+            }
+        }
+
+        // ============ 动画效果 ============
+        function showFoundAnimation() {
+            const indicator = document.createElement('div');
+            indicator.className = 'found-indicator';
+            document.body.appendChild(indicator);
+            setTimeout(() => indicator.remove(), 1000);
+        }
+
+        // ============ 面板控制 ============
+        function showPanel(panelId) {
+            document.getElementById(panelId).classList.add('show');
+        }
+
+        function closePanel(panelId) {
+            document.getElementById(panelId).classList.remove('show');
+        }
+
+        // ============ 防止重复触发 ============
+        let clockActive = false;
+        let catActive = false;
+        let stoneActive = false;
+        let gooseActive = false;
+        let libraryActive = false;
+
+        // ============ 启动AR ============
+        function startAR() {
+            document.getElementById('splash').style.display = 'none';
+            document.getElementById('ar-scene').setAttribute('visible', 'true');
+            document.getElementById('scan-hint').style.display = 'block';
+            
+            // 恢复音频上下文（移动端需要用户交互后才能播放音频）
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            // ============ 目标追踪事件 ============
+            
+            // 钟楼
+            const clockTarget = document.getElementById('clock-tower-target');
+            if (clockTarget) {
+                clockTarget.addEventListener('targetFound', () => {
+                    console.log('Clock tower found!');
+                    document.getElementById('scan-hint').style.display = 'none';
+                    if (!clockActive) {
+                        clockActive = true;
+                        showFoundAnimation();
+                        showPanel('clock-panel');
+                        playBellSound();
+                    }
+                });
+                
+                clockTarget.addEventListener('targetLost', () => {
+                    console.log('Clock tower lost');
+                    clockActive = false;
+                    closePanel('clock-panel');
+                });
+            }
+            
+            // 猫猫
+            const catTarget = document.getElementById('cat-target');
+            if (catTarget) {
+                catTarget.addEventListener('targetFound', () => {
+                    console.log('Cat found!');
+                    document.getElementById('scan-hint').style.display = 'none';
+                    if (!catActive) {
+                        catActive = true;
+                        showFoundAnimation();
+                        showPanel('cat-panel');
+                        playCatSound();
+                    }
+                });
+                
+                catTarget.addEventListener('targetLost', () => {
+                    console.log('Cat lost');
+                    catActive = false;
+                    closePanel('cat-panel');
+                });
+            }
+            // 石碑
+            const stoneTarget = document.getElementById('stone-target');
+            if(stoneTarget){
+               stoneTarget.addEventListener('targetFound', ()=>{
+                   document.getElementById('scan-hint').style.display = 'none';
+                   if(!stoneActive){
+                       stoneActive = true;
+                       showFoundAnimation();
+                       showPanel('stone-panel');
+                   }
+               });
+               stoneTarget.addEventListener('targetLost', ()=>{
+                   stoneActive = false;
+                   closePanel('stone-panel');
+                });
+            }
+            // 诺米大鹅
+            const gooseTarget = document.getElementById('goose-target');
+            if(gooseTarget){
+               gooseTarget.addEventListener('targetFound', ()=>{
+                   document.getElementById('scan-hint').style.display = 'none';
+                   if(!gooseActive){
+                       gooseActive = true;
+                       showFoundAnimation();
+                       showPanel('goose-panel');
+                    }
+                });
+                gooseTarget.addEventListener('targetLost', ()=>{
+                    gooseActive = false;
+                    closePanel('goose-panel');
+                });
+            }
+
+            // 图书馆
+            const libraryTarget = document.getElementById('library-target');
+            if(libraryTarget){
+               libraryTarget.addEventListener('targetFound', ()=>{
+                   document.getElementById('scan-hint').style.display = 'none';
+                   if(!libraryActive){
+                       libraryActive = true;
+                       showFoundAnimation();
+                       showPanel('library-panel');
+                    }
+                });
+                libraryTarget.addEventListener('targetLost', ()=>{
+                    libraryActive = false;
+                    closePanel('library-panel');
+                });
+            }
+        }
+    </script>
+</body>
+</html>
